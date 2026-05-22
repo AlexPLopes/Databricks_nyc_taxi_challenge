@@ -237,6 +237,16 @@ ORDER BY 1;
 
 ![Question 1 — monthly average total_amount](docs/images/query_1_monthly_avg_total_amount.png)
 
+| trip_month | avg_total_amount |
+|------------|------------------|
+| 01 | 27.40 |
+| 02 | 27.31 |
+| 03 | 28.23 |
+| 04 | 28.72 |
+| 05 | 29.38 |
+
+**Brief reading:** average fare (`total_amount`) rises slightly from January to May 2023, from **27.40** to **29.38**, on cleansed yellow taxi data.
+
 ---
 
 ### Question 2 — Average `passenger_count` by hour of day in May 2023
