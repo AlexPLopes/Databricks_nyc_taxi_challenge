@@ -214,18 +214,78 @@ Unity Catalog external tables require a **cloud URI scheme** (`s3://`, `abfss://
 
 ## Analysis — `analysis/queries.sql`
 
-Run against `nyc_taxi.yellow_trips_consumption` after notebook 03.
+Run against `nyc_taxi.yellow_trips_consumption` after notebook 03 (SQL warehouse or SQL Editor).
 
-### Question 1 — Monthly average `total_amount` (Jan–May 2023)
+Full SQL: [`analysis/queries.sql`](analysis/queries.sql)
 
-Uses `date_format` for readable month labels (`2023-01`, …).  
-`date_trunc('month', ...)` returns the first instant of each month (`2023-01-01T00:00:00Z`), which is correct for grouping but less readable in output.
+---
+
+### Question 1 — Monthly average `total_amount` (yellow taxi, Jan–May 2023)
+
+**SQL:**
+
+```sql
+SELECT
+  date_format(tpep_pickup_datetime, 'MM') AS trip_month,
+  ROUND(AVG(total_amount), 2) AS avg_total_amount
+FROM nyc_taxi.yellow_trips_consumption
+GROUP BY 1
+ORDER BY 1;
+```
+
+**Results** (Databricks SQL Editor):
+
+![Question 1 — monthly average total_amount](docs/images/query_1_monthly_avg_total_amount.png)
+
+---
 
 ### Question 2 — Average `passenger_count` by hour of day in May 2023
 
-Filters May 2023 trips and groups by `hour(tpep_pickup_datetime)`.
+**SQL:**
 
-See `analysis/queries.sql` for the full SQL.
+```sql
+SELECT
+  hour(tpep_pickup_datetime) AS pickup_hour,
+  ROUND(AVG(passenger_count), 2) AS avg_passenger_count
+FROM nyc_taxi.yellow_trips_consumption
+WHERE tpep_pickup_datetime >= '2023-05-01'
+  AND tpep_pickup_datetime < '2023-06-01'
+GROUP BY 1
+ORDER BY 1;
+```
+
+**Results** (Databricks SQL Editor — 24 rows, hours 0–23):
+
+![Question 2 — May 2023 average passengers by hour](docs/images/query_2_may_avg_passengers_by_hour.png)
+
+| pickup_hour | avg_passenger_count |
+|-------------|---------------------|
+| 0 | 1.41 |
+| 1 | 1.42 |
+| 2 | 1.44 |
+| 3 | 1.44 |
+| 4 | 1.39 |
+| 5 | 1.27 |
+| 6 | 1.23 |
+| 7 | 1.25 |
+| 8 | 1.27 |
+| 9 | 1.28 |
+| 10 | 1.32 |
+| 11 | 1.33 |
+| 12 | 1.35 |
+| 13 | 1.36 |
+| 14 | 1.36 |
+| 15 | 1.37 |
+| 16 | 1.37 |
+| 17 | 1.37 |
+| 18 | 1.36 |
+| 19 | 1.37 |
+| 20 | 1.39 |
+| 21 | 1.40 |
+| 22 | 1.41 |
+| 23 | 1.41 |
+
+**Brief reading:** in May 2023, average passengers per trip stays between **1.23** (hour 6) and **1.44** (hours 2–3), with no sharp peak across the day — consistent with short urban yellow taxi trips.
 
 ---
 
