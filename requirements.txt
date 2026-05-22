@@ -1,0 +1,15 @@
+# =============================================================================
+# NYC Yellow Taxi — iFood case
+# =============================================================================
+# Notebooks run on Databricks Serverless. Cluster runtime includes:
+#   - pyspark
+#   - delta-spark (Delta Lake)
+#
+# No extra pip packages are required to execute src/ notebooks in Databricks.
+#
+# urllib (TLC download) is Python standard library.
+# dbutils is provided by Databricks only (not installable via pip).
+# =============================================================================
+# --- Optional: local development only (IDE autocomplete / lint) ---
+# Uncomment if you edit notebooks locally; versions should match your workspace runtime.
+# pyspark>=3.5.0,<4.0.0
