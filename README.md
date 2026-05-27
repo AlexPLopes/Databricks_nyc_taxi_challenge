@@ -32,7 +32,7 @@ TLC Parquet files (Jan–May 2023)
         ▼
 ┌───────────────────────────────────────┐
 │ 02_landing_to_consumption             │
-│  PySpark: QA, cleanse, cast schema     │
+│  PySpark: cast at read, QA, cleanse    │
 │  Write Delta → consumption Volume     │
 └───────────────────────────────────────┘
         │
@@ -158,6 +158,7 @@ After code changes: **Run → Clear state** (or **Restart Python**) before re-ru
 ### Read strategy
 
 - Read **one file per month** (avoids Parquet schema conflicts across months)
+- `read_month()` selects the 5 required columns and applies **all casts** (`long`, `double`, `timestamp`) before union
 - `unionByName` to build the full Jan–May dataset
 
 ### Cleansing rules (consumption contract)
@@ -170,7 +171,7 @@ After code changes: **Run → Clear state** (or **Restart Python**) before re-ru
 | Valid amounts | `total_amount >= 0` |
 | Valid passenger count | `0 <= passenger_count <= 9` |
 | Valid trip duration | `dropoff_datetime > pickup_datetime` |
-| Fixed schema | Explicit `.cast(...)` before write |
+| Fixed schema | Explicit `.cast(...)` in `read_month()` (single contract at read) |
 
 ### Write to consumption
 
@@ -365,7 +366,7 @@ FROM nyc_taxi.yellow_trips_consumption;
 |-------|--------------|------------|
 | `DBFS_DISABLED` on `/FileStore` | Free Edition | Use UC Volumes under `/Volumes/...` |
 | `UnknownHostException` on TLC URL | No outbound network | Manual upload to landing Volume |
-| `PARQUET_COLUMN_DATA_TYPE_MISMATCH` | Schema differs across months | Read month-by-month; cast in notebook 02 |
+| `PARQUET_COLUMN_DATA_TYPE_MISMATCH` | Schema differs across months | Read month-by-month; cast all columns in `read_month()` (notebook 02) |
 | `DELTA_FAILED_TO_MERGE_FIELDS` | Old Delta/table schema | `.option("overwriteSchema", "true")` or `dbutils.fs.rm(consumption_path, recurse=True)`; `spark.catalog.dropTable(...)` before notebook 03 |
 | `Missing cloud file system scheme` | `LOCATION '/Volumes/...'` | Use `saveAsTable` (notebook 03) |
 
