@@ -200,7 +200,7 @@ If the schema changes during development, add `.option("overwriteSchema", "true"
 
 ```python
 spark.catalog.setCurrentCatalog(CATALOG)
-spark.catalog.dropTable(full_table, ignoreIfNotExists=True)
+spark.sql(f"DROP TABLE IF EXISTS {full_table}")
 
 df = spark.read.format("delta").load(consumption_path)
 df.write.format("delta").mode("overwrite").saveAsTable(full_table)
@@ -221,7 +221,7 @@ Unity Catalog external tables require a **cloud URI scheme** (`s3://`, `abfss://
 
 **Approach chosen:** Delta files on the consumption Volume (physical curated layer) + **managed table** via `saveAsTable` (SQL serving layer). This matches common enterprise patterns (curated files + catalog table), adapted for Free Edition constraints.
 
-**PySpark usage:** Catalog API (`setCurrentCatalog`, `dropTable`, `getTable`), `read`/`write` Delta, `saveAsTable`, and DataFrame validations.
+**PySpark usage:** Catalog API (`setCurrentCatalog`, `getTable`), `spark.sql` for `DROP TABLE` / `COMMENT`, `read`/`write` Delta, `saveAsTable`, and DataFrame validations.
 
 ---
 
@@ -367,7 +367,7 @@ FROM nyc_taxi.yellow_trips_consumption;
 | `DBFS_DISABLED` on `/FileStore` | Free Edition | Use UC Volumes under `/Volumes/...` |
 | `UnknownHostException` on TLC URL | No outbound network | Manual upload to landing Volume |
 | `PARQUET_COLUMN_DATA_TYPE_MISMATCH` | Schema differs across months | Read month-by-month; cast all columns in `read_month()` (notebook 02) |
-| `DELTA_FAILED_TO_MERGE_FIELDS` | Old Delta/table schema | `.option("overwriteSchema", "true")` or `dbutils.fs.rm(consumption_path, recurse=True)`; `spark.catalog.dropTable(...)` before notebook 03 |
+| `DELTA_FAILED_TO_MERGE_FIELDS` | Old Delta/table schema | `.option("overwriteSchema", "true")` or `dbutils.fs.rm(consumption_path, recurse=True)`; `DROP TABLE IF EXISTS` before notebook 03 |
 | `Missing cloud file system scheme` | `LOCATION '/Volumes/...'` | Use `saveAsTable` (notebook 03) |
 
 ---
