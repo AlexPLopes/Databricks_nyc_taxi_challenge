@@ -41,8 +41,8 @@ TLC Parquet files (Jan–May 2023)
         │
         ▼
 ┌───────────────────────────────────────┐
-│ 03_register_table                     │
-│  Read Delta → managed UC table         │
+│ 03_register_Table                     │
+│  Catalog API + saveAsTable → UC table  │
 └───────────────────────────────────────┘
         │
         ▼
@@ -56,7 +56,7 @@ TLC Parquet files (Jan–May 2023)
 |-------|---------|----------------|----------|
 | Landing | Unity Catalog Volume (`landing`) | — | `01_ingest_landing` |
 | Consumption | Unity Catalog Volume (`consumption`) | — | `02_landing_to_consumption` |
-| SQL serving | UC managed Delta (table storage) | `nyc_taxi.yellow_trips_consumption` | `03_register_table` |
+| SQL serving | UC managed Delta (table storage) | `nyc_taxi.yellow_trips_consumption` | `03_register_Table` |
 
 ---
 
@@ -67,7 +67,7 @@ Databricks_nyc_taxi_challenge/
 ├── src/
 │   ├── 01_ingest_landing.ipynb
 │   ├── 02_landing_to_consumption.ipynb
-│   └── 03_register_table.ipynb
+│   └── 03_register_Table.ipynb
 ├── analysis/
 │   └── queries.sql
 ├── README.md
@@ -86,7 +86,7 @@ Databricks_nyc_taxi_challenge/
 
 | Object | Name |
 |--------|------|
-| Catalog | `workspace` (adjust if `SHOW CATALOGS` returns another name) |
+| Catalog | `workspace` (adjust if `spark.catalog.listCatalogs()` shows another name) |
 | Schema | `nyc_taxi` |
 | Volumes | `nyc_taxi.landing`, `nyc_taxi.consumption` |
 | Table | `nyc_taxi.yellow_trips_consumption` (created in notebook 03) |
@@ -124,8 +124,10 @@ Run notebooks on **Serverless** compute in this order:
 
 1. `src/01_ingest_landing.ipynb`
 2. `src/02_landing_to_consumption.ipynb`
-3. `src/03_register_table.ipynb`
+3. `src/03_register_Table.ipynb`
 4. `analysis/queries.sql` (SQL Editor or `%sql` cell)
+
+In each notebook, run the **Setup** cell (imports + variables) first—especially after **Restart Python** or **Clear state**.
 
 After code changes: **Run → Clear state** (or **Restart Python**) before re-running downstream notebooks.
 
@@ -135,11 +137,13 @@ After code changes: **Run → Clear state** (or **Restart Python**) before re-ru
 
 **Purpose:** Landing supply and validation.
 
+- **Setup** — imports, `CATALOG`, `SCHEMA`, `months`, `landing_base` (single source of truth)
+- List catalogs with `spark.catalog.listCatalogs()`
 - Create schema and volumes (`landing`, `consumption`)
-- Verify all 5 expected Parquet paths exist under the landing Volume
-- Optional: row/column counts per month (`spark.read.parquet`)
+- Verify all 5 expected Parquet paths exist under the landing Volume (`dbutils.fs.ls`)
+- Quick validation: row counts per month (`spark.read.parquet`, `unionByName`)
 
-**PySpark usage:** `spark.read.parquet` for validation reads.
+**PySpark usage:** Catalog API (`listCatalogs`), `spark.read.parquet`, `unionByName`.
 
 **Does not** write to consumption or register tables.
 
@@ -148,6 +152,8 @@ After code changes: **Run → Clear state** (or **Restart Python**) before re-ru
 ## Notebook 02 — `02_landing_to_consumption`
 
 **Purpose:** Data quality checks, cleansing, and Delta load to the consumption Volume.
+
+**Setup** — imports, `CATALOG`, `SCHEMA`, `months`, `landing_base`, `consumption_path` (run first).
 
 ### Read strategy
 
@@ -169,26 +175,44 @@ After code changes: **Run → Clear state** (or **Restart Python**) before re-ru
 ### Write to consumption
 
 ```python
-df_treated.write.format("delta").mode("overwrite") \
-    .option("overwriteSchema", "true") \
+(
+    df_treated.write
+    .format("delta")
+    .mode("overwrite")
     .save(consumption_path)
+)
 ```
 
-Use `overwriteSchema` (or delete the consumption path) when the schema changes to avoid `DELTA_FAILED_TO_MERGE_FIELDS`.
+If the schema changes during development, add `.option("overwriteSchema", "true")` or delete the consumption path before re-writing to avoid `DELTA_FAILED_TO_MERGE_FIELDS`.
 
 **PySpark usage:** Main transformation notebook (`read`, `filter`, `agg`, `unionByName`, `write` Delta).
 
 ---
 
-## Notebook 03 — `03_register_table`
+## Notebook 03 — `03_register_Table`
 
 **Purpose:** Publish the consumption Delta dataset as a Unity Catalog table for SQL consumers.
 
+**Setup** — imports (`col`, `when`, aggregations), `CATALOG`, `SCHEMA`, `consumption_path`, `full_table`, and `spark.catalog.setCurrentCatalog(CATALOG)`.
+
+### Register managed table
+
 ```python
-spark.sql("DROP TABLE IF EXISTS nyc_taxi.yellow_trips_consumption")
+spark.catalog.setCurrentCatalog(CATALOG)
+spark.catalog.dropTable(full_table, ignoreIfNotExists=True)
+
 df = spark.read.format("delta").load(consumption_path)
-df.write.format("delta").mode("overwrite").saveAsTable("nyc_taxi.yellow_trips_consumption")
+df.write.format("delta").mode("overwrite").saveAsTable(full_table)
 ```
+
+Table comment: `COMMENT ON TABLE` via `spark.sql` (DDL).
+
+### Post-registration validation (PySpark DataFrame API)
+
+- `spark.table(full_table).printSchema()` and `.describe()`
+- `spark.catalog.getTable(full_table)` — table metadata
+- `.count()` and `.limit(10)` — row count and sample
+- `.agg(min, max, countDistinct, sum(when(...)))` — date range and sanity checks (e.g. `neg_amount` = 0)
 
 ### Why not `CREATE TABLE ... LOCATION '/Volumes/...'`?
 
@@ -196,7 +220,7 @@ Unity Catalog external tables require a **cloud URI scheme** (`s3://`, `abfss://
 
 **Approach chosen:** Delta files on the consumption Volume (physical curated layer) + **managed table** via `saveAsTable` (SQL serving layer). This matches common enterprise patterns (curated files + catalog table), adapted for Free Edition constraints.
 
-**PySpark usage:** `spark.read.format("delta")` and `saveAsTable`.
+**PySpark usage:** Catalog API (`setCurrentCatalog`, `dropTable`, `getTable`), `read`/`write` Delta, `saveAsTable`, and DataFrame validations.
 
 ---
 
@@ -308,7 +332,8 @@ ORDER BY 1;
 | Curated storage | Delta on Volume `consumption` | ACID, versioned curated layer |
 | SQL access | Managed Delta table | Works without `s3://` external locations |
 | Transform | PySpark (notebook 02) | Case requirement |
-| Consumer queries | SQL | Case requirement |
+| Catalog / table ops | PySpark Catalog API (notebooks 01, 03) | UC-native; avoids ad hoc SQL where DataFrame API fits |
+| Consumer queries | SQL (`analysis/queries.sql`) | Case requirement |
 
 ### Enterprise (Databricks on AWS/Azure/GCP)
 
@@ -341,7 +366,7 @@ FROM nyc_taxi.yellow_trips_consumption;
 | `DBFS_DISABLED` on `/FileStore` | Free Edition | Use UC Volumes under `/Volumes/...` |
 | `UnknownHostException` on TLC URL | No outbound network | Manual upload to landing Volume |
 | `PARQUET_COLUMN_DATA_TYPE_MISMATCH` | Schema differs across months | Read month-by-month; cast in notebook 02 |
-| `DELTA_FAILED_TO_MERGE_FIELDS` | Old Delta/table schema | `overwriteSchema` or `dbutils.fs.rm(consumption_path, recurse=True)`; `DROP TABLE` before notebook 03 |
+| `DELTA_FAILED_TO_MERGE_FIELDS` | Old Delta/table schema | `.option("overwriteSchema", "true")` or `dbutils.fs.rm(consumption_path, recurse=True)`; `spark.catalog.dropTable(...)` before notebook 03 |
 | `Missing cloud file system scheme` | `LOCATION '/Volumes/...'` | Use `saveAsTable` (notebook 03) |
 
 ---
